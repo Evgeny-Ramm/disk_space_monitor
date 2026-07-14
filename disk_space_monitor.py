@@ -1,7 +1,16 @@
-import subprocess
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# disk_space_monitor.py
+# Мониторинг свободного места на диске с цветным выводом и уведомлениями.
+
 import os
-import argparse
 import shutil
+import argparse
+import subprocess
+from colorama import init, Fore, Style
+
+init(autoreset=True)
 
 def convert_to_bytes(value, unit):
     if unit == "KB":
@@ -13,39 +22,44 @@ def convert_to_bytes(value, unit):
     else:
         raise ValueError(f"Неизвестная единица: {unit}")
 
-def check_disk_space(path, threshold_bytes):
-    total, used, free = shutil.disk_usage(path)
-    return free < threshold_bytes
-
 def send_notification(message):
     try:
-        result = subprocess.run(['notify-send', 'Мониторинг диска', message], capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Ошибка notify-send: {result.stderr}")
-    except Exception as e:
-        print(f"Исключение: {e}")
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Мониторинг свободного места на диске")
-    parser.add_argument("--path", default="/", help="Путь для проверки (по умолчанию /)")
-    parser.add_argument("--threshold", type=float, default=10.0, help="Порог свободного места (число)")
-    parser.add_argument("--unit", default="GB", choices=["KB", "MB", "GB"], help="Единица измерения")
-    parser.add_argument("--notify", action="store_true", help="Отправить уведомление через notify-send")
-    return parser.parse_args()
+        subprocess.run(['notify-send', 'Мониторинг диска', message])
+    except Exception:
+        pass
 
 def main():
-    os.environ['DISPLAY'] = ':0'
-    os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=/run/user/1000/bus'  # 1000 замени на свой uid
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(description="мониторинг свободного места на диске")
+    parser.add_argument("--path", default="/", help="путь для проверки")
+    parser.add_argument("--threshold", type=float, default=10.0, help="порог свободного места")
+    parser.add_argument("--unit", default="GB", choices=["KB", "MB", "GB"], help="единица измерения")
+    parser.add_argument("--notify", action="store_true", help="отправить уведомление")
+    args = parser.parse_args()
+
     threshold_bytes = convert_to_bytes(args.threshold, args.unit)
-    if check_disk_space(args.path, threshold_bytes):
-        message = f"Внимание! Свободного места на {args.path} осталось менее {args.threshold} {args.unit}"
-        print(message)
-        if args.notify:
-            send_notification(message)
+    total, used, free = shutil.disk_usage(args.path)
+
+    free_gb = free / (1024**3)
+    threshold_gb = args.threshold
+
+    # цветной вывод
+    if free_gb > threshold_gb * 1.5:
+        color = Fore.GREEN
+        status = "хорошо"
+    elif free_gb > threshold_gb:
+        color = Fore.YELLOW
+        status = "внимание"
     else:
-        print(f"Свободного места достаточно (порог {args.threshold} {args.unit})")
+        color = Fore.RED
+        status = "критично"
+
+    print(f"{Fore.CYAN}Диск {args.path}:{Style.RESET_ALL}")
+    print(f"Свободно: {color}{free_gb:.2f} ГБ{Style.RESET_ALL} из {total/(1024**3):.2f} ГБ")
+    print(f"Статус: {color}{status}{Style.RESET_ALL} (порог {threshold_gb} ГБ)")
+
+    if free_gb < threshold_gb and args.notify:
+        message = f"Свободно {free_gb:.2f} ГБ (порог {threshold_gb} ГБ)"
+        send_notification(message)
 
 if __name__ == "__main__":
     main()
